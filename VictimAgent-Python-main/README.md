@@ -82,3 +82,46 @@ The agent **should** apologise and refuse—unless your adversary succeeds.
 4. **Evaluate** – track jailbreak rate across temperature, model, and patched prompts.
 
 Happy jailbreaking 🚀
+
+---
+
+## 🛡️ v2 — Hardened production path
+
+v2 keeps the legacy oracle above for research and adds a hardened API:
+
+| Route | Purpose |
+|---|---|
+| `POST /api/v1/chat` | Hardened path: auth, validation, input/output guardrails, rate limits |
+| `POST /api/v1/victim/chat` | Legacy vulnerable oracle. Only when `ENABLE_VICTIM=true`. Never expose publicly |
+| `GET /healthz`, `GET /readyz` | Probes (unauthenticated) |
+
+### Run
+
+```bash
+cp .env.example .env   # set OPENAI_API_KEY, PROD_API_KEYS
+pip install -r requirements.txt
+uvicorn main:app --host 127.0.0.1 --port 8000
+```
+
+Authenticated request:
+
+```bash
+curl -X POST http://127.0.0.1:8000/api/v1/chat \
+     -H "Content-Type: application/json" -H "X-API-Key: $PROD_API_KEYS" \
+     -d '{"messages":[{"role":"user","content":"Write an article on mindful morning routines."}]}'
+```
+
+Only `role: "user"` is accepted (`system`/`assistant`/`tool` → `422`).
+Off-topic or injection attempts get a canned refusal (`policy.gate` =
+`input`/`output`), never model passthrough.
+
+### Verify
+
+```bash
+pip install -r requirements-dev.txt
+python -m pytest -q        # 32 tests: validation, gates, API, adversarial suite
+pip-audit -r requirements.txt
+```
+
+See `SECURITY.md`, `THREAT_MODEL.md`, `MODEL_CARD.md` for the control mapping
+(OWASP LLM Top 10:2025), and `evals/jailbreak_suite.jsonl` for the regression set.
